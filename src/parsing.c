@@ -180,6 +180,99 @@ static int	parse_ports(const char *text, t_options *options)
 	return (0);
 }
 
+void	free_targets(t_options *options)
+{
+	size_t	i;
+
+	i = 0;
+	while (i < options->target_count)
+		free(options->targets[i++].name);
+	free(options->targets);
+	options->targets = NULL;
+	options->target_count = 0;
+}
+
+static char	*trim_line(char *line)
+{
+	char	*end;
+
+	while (isspace((unsigned char)*line))
+		line++;
+	end = line + strlen(line);
+	while (end > line && isspace((unsigned char)end[-1]))
+		end--;
+	*end = '\0';
+	return (line);
+}
+
+static int	add_target(const char *target, t_options *options)
+{
+	t_target	*grown;
+	char		*copy;
+
+	copy = strdup(target);
+	if (copy == NULL)
+		return (1);
+	grown = realloc(options->targets,
+			(options->target_count + 1) * sizeof(*options->targets));
+	if (grown == NULL)
+	{
+		free(copy);
+		return (1);
+	}
+	options->targets = grown;
+	memset(&grown[options->target_count], 0, sizeof(*grown));
+	grown[options->target_count++].name = copy;
+	return (0);
+}
+
+/* Une cible par ligne ; les blancs autour sont ignorés, les lignes vides aussi. */
+static int	read_targets_file(const char *path, t_options *options)
+{
+	FILE	*stream;
+	char	*line;
+	size_t	size;
+	char	*target;
+
+	stream = fopen(path, "r");
+	if (stream == NULL)
+	{
+		fprintf(stderr, "Erreur : impossible d'ouvrir %s : %s\n",
+			path, strerror(errno));
+		return (1);
+	}
+	line = NULL;
+	size = 0;
+	while (getline(&line, &size, stream) != -1)
+	{
+		target = trim_line(line);
+		if (target[0] != '\0' && add_target(target, options) != 0)
+		{
+			fprintf(stderr, "Erreur : mémoire insuffisante.\n");
+			free(line);
+			fclose(stream);
+			free_targets(options);
+			return (1);
+		}
+	}
+	free(line);
+	if (ferror(stream))
+	{
+		fprintf(stderr, "Erreur : lecture de %s impossible : %s\n",
+			path, strerror(errno));
+		fclose(stream);
+		free_targets(options);
+		return (1);
+	}
+	fclose(stream);
+	if (options->target_count == 0)
+	{
+		fprintf(stderr, "Erreur : aucune cible dans %s\n", path);
+		return (1);
+	}
+	return (0);
+}
+
 int	parse_args(int argc, char **argv, t_options *options)
 {
 	int	i;
@@ -264,6 +357,14 @@ int	parse_args(int argc, char **argv, t_options *options)
 	if (options->ip == NULL && options->file == NULL)
 	{
 		fprintf(stderr, "Erreur : indique une cible avec --ip ou --file.\n");
+		return (1);
+	}
+	if (options->file != NULL
+		&& read_targets_file(options->file, options) != 0)
+		return (1);
+	if (options->ip != NULL && add_target(options->ip, options) != 0)
+	{
+		fprintf(stderr, "Erreur : mémoire insuffisante.\n");
 		return (1);
 	}
 	if (options->ports == NULL && parse_ports(NULL, options) != 0)

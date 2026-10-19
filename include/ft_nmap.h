@@ -39,10 +39,18 @@
 
 /*structures*/
 
+typedef struct s_target
+{
+    char            *name;  /* tel qu'écrit par l'utilisateur */
+    struct in_addr  addr;   /* IPv4 résolue, en ordre réseau */
+}   t_target;
+
 typedef struct s_options
 {
     char    *ip;
     char    *file;
+    t_target    *targets;
+    size_t  target_count;
     int     *ports;
     size_t  port_count;
     int     thread_count;
@@ -55,6 +63,9 @@ typedef struct s_options
 }   t_options;
 
 int	parse_args(int argc, char **argv, t_options *options);
+void	free_targets(t_options *options);
+int	resolve_targets(t_options *options);
+void	print_config(const t_options *options);
 void    print_help(void);
 
 #endif

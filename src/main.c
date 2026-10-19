@@ -1,18 +1,36 @@
 #include "ft_nmap.h"
 
+/* Les raw sockets exigent les droits root (UID effectif 0). */
+static int  check_root(void)
+{
+    if (geteuid() != 0)
+    {
+        fprintf(stderr, "Erreur : ft_nmap doit être lancé en root "
+            "(raw sockets). Essaie : sudo ./ft_nmap ...\n");
+        return 1;
+    }
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     t_options   options;
 
     memset(&options, 0, sizeof(options));
-    if (parse_args(argc, argv, &options) != 0)
+    if (parse_args(argc, argv, &options) != 0
+        || check_root() != 0
+        || resolve_targets(&options) != 0)
     {
+        free_targets(&options);
         free(options.ports);
         return 1;
     }
 
-    /* Ensuite : résoudre les cibles et lancer les scans. */
+    print_config(&options);
 
+    /* Ensuite : lancer les scans. */
+
+    free_targets(&options);
     free(options.ports);
     return 0;
 }

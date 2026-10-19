@@ -8,7 +8,8 @@ SRC = src/main.c \
       src/args.c \
       src/ports.c \
       src/output.c \
-      src/parsing.c
+      src/parsing.c \
+      src/resolve.c
 
 OBJ = $(SRC:.c=.o)
 
