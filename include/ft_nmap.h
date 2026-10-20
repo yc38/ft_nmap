@@ -67,5 +67,6 @@ void	free_targets(t_options *options);
 int	resolve_targets(t_options *options);
 void	print_config(const t_options *options);
 void    print_help(void);
+int	get_source_ip(struct in_addr dst, struct in_addr *src);
 
 #endif

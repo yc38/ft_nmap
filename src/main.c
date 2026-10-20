@@ -28,6 +28,16 @@ int main(int argc, char **argv)
 
     print_config(&options);
 
+    /* Test temporaire de la phase 2, étape 1 (à retirer ensuite). */
+    {
+        struct in_addr  src;
+        char            buf[INET_ADDRSTRLEN];
+
+        if (get_source_ip(options.targets[0].addr, &src) == 0)
+            printf("[debug] Source IP : %s\n",
+                inet_ntop(AF_INET, &src, buf, sizeof(buf)));
+    }
+
     /* Ensuite : lancer les scans. */
 
     free_targets(&options);
