@@ -28,14 +28,22 @@ int main(int argc, char **argv)
 
     print_config(&options);
 
-    /* Test temporaire de la phase 2, étape 1 (à retirer ensuite). */
+    /* Test temporaire de la phase 2, étapes 1-2 : 1 SYN vers le 1er port
+    ** de la 1re cible (à retirer ensuite). */
     {
-        struct in_addr  src;
-        char            buf[INET_ADDRSTRLEN];
+        t_probe probe;
+        int     fd;
 
-        if (get_source_ip(options.targets[0].addr, &src) == 0)
-            printf("[debug] Source IP : %s\n",
-                inet_ntop(AF_INET, &src, buf, sizeof(buf)));
+        probe.dst = options.targets[0].addr;
+        probe.sport = 40000;
+        probe.dport = (uint16_t)options.ports[0];
+        probe.flags = TH_SYN;
+        fd = open_raw_socket();
+        if (fd >= 0 && get_source_ip(probe.dst, &probe.src) == 0
+            && send_tcp_probe(fd, &probe) == 0)
+            printf("[debug] SYN envoyé vers le port %u\n", probe.dport);
+        if (fd >= 0)
+            close(fd);
     }
 
     /* Ensuite : lancer les scans. */
