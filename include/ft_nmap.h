@@ -74,6 +74,22 @@ typedef struct s_probe
     uint8_t         flags;  /* TH_SYN, TH_ACK, ... */
 }   t_probe;
 
+typedef enum e_state
+{
+    STATE_NONE,     /* rien reçu (interne) */
+    STATE_OPEN,
+    STATE_CLOSED,
+    STATE_FILTERED
+}   t_state;
+
+typedef struct s_capture
+{
+    pcap_t  *handle;
+    int     offset;     /* taille de l'en-tête de liaison */
+    t_probe probe;      /* sonde en attente de réponse */
+    t_state state;
+}   t_capture;
+
 int	parse_args(int argc, char **argv, t_options *options);
 void	free_targets(t_options *options);
 int	resolve_targets(t_options *options);
@@ -84,5 +100,9 @@ uint16_t	checksum(const void *data, size_t len);
 void	build_tcp_packet(uint8_t *buf, const t_probe *probe);
 int	open_raw_socket(void);
 int	send_tcp_probe(int fd, const t_probe *probe);
+int	open_capture(t_capture *cap, struct in_addr dst);
+t_state	wait_response(t_capture *cap, const t_probe *probe, int timeout_ms);
+void	close_capture(t_capture *cap);
+const char	*state_name(t_state state);
 
 #endif

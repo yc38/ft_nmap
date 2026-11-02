@@ -11,7 +11,8 @@ SRC = src/main.c \
       src/parsing.c \
       src/resolve.c \
       src/source_ip.c \
-      src/packet.c
+      src/packet.c \
+      src/capture.c
 
 OBJ = $(SRC:.c=.o)
 

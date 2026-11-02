@@ -28,11 +28,12 @@ int main(int argc, char **argv)
 
     print_config(&options);
 
-    /* Test temporaire de la phase 2, étapes 1-2 : 1 SYN vers le 1er port
-    ** de la 1re cible (à retirer ensuite). */
+    /* Test temporaire de la phase 2 : 1 SYN vers le 1er port de la 1re
+    ** cible, puis lecture de la réponse (à retirer ensuite). */
     {
-        t_probe probe;
-        int     fd;
+        t_probe     probe;
+        t_capture   cap;
+        int         fd;
 
         probe.dst = options.targets[0].addr;
         probe.sport = 40000;
@@ -40,8 +41,13 @@ int main(int argc, char **argv)
         probe.flags = TH_SYN;
         fd = open_raw_socket();
         if (fd >= 0 && get_source_ip(probe.dst, &probe.src) == 0
-            && send_tcp_probe(fd, &probe) == 0)
-            printf("[debug] SYN envoyé vers le port %u\n", probe.dport);
+            && open_capture(&cap, probe.dst) == 0)
+        {
+            if (send_tcp_probe(fd, &probe) == 0)
+                printf("Port %u : %s\n", probe.dport,
+                    state_name(wait_response(&cap, &probe, 2000)));
+            close_capture(&cap);
+        }
         if (fd >= 0)
             close(fd);
     }

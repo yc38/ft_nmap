@@ -182,3 +182,93 @@ détecter une mauvaise livraison, même si TCP ne voit pas l'en-tête IP.
 ### Prochaine étape (phase 2, étape 3)
 
 Capturer la réponse avec pcap (ouverture de l'interface, filtre, `pcap_dispatch`).
+
+---
+
+## Phase 2, étape 3 : recevoir la réponse avec pcap (`src/capture.c`)
+
+### Pourquoi pcap et pas un raw socket
+
+On a envoyé un SYN fabriqué à la main. La cible répond par un SYN/ACK (ouvert),
+un RST (fermé), un ICMP (filtré) ou rien. Un raw socket ne voit pas ces réponses
+de façon fiable : le noyau les traite de son côté (il ne connaît pas notre SYN,
+donc il répond lui-même par un RST au SYN/ACK). **pcap** donne une copie de tout
+ce qui passe sur l'interface, comme `tcpdump`.
+Montage : **envoi = raw socket, réception = pcap**.
+
+### Les 5 sous-étapes
+
+1. **Ouvrir la capture** : `pcap_open_live("any", 128, 0, 100, errbuf)`.
+   - `"any"` capture sur toutes les interfaces (lo, enp0s3...), donc pas besoin
+     de deviner laquelle utilise la route vers la cible.
+   - `128` = octets gardés par paquet : on ne lit que les en-têtes.
+   - `0` = pas de mode promiscuous (on ne veut que nos paquets).
+   - `100` = timeout de lecture en ms, pour ne pas rester bloqué.
+2. **Poser un filtre BPF** (même syntaxe que tcpdump), appliqué dans le noyau :
+   `(tcp and src host <cible>) or icmp`.
+   Les ICMP sont acceptés de n'importe quelle source, car c'est souvent un
+   routeur intermédiaire (pas la cible) qui les envoie. On les vérifie ensuite
+   dans le code. `pcap_compile` + `pcap_setfilter`, puis `pcap_freecode`.
+3. **`pcap_datalink()`** : chaque paquet capturé commence par un en-tête de
+   liaison avant l'IP. Sa taille dépend du type d'interface :
+
+   | DLT | Cas | Octets à sauter |
+   |---|---|---|
+   | `DLT_EN10MB` | Ethernet | 14 |
+   | `DLT_LINUX_SLL` | device `any` | 16 |
+   | `DLT_NULL` | loopback BSD | 4 |
+   | `DLT_RAW` | IP brut | 0 |
+
+   Si on se trompe, tout est décalé et on lit n'importe quoi. On le calcule une
+   fois à l'ouverture (`link_offset`) et on le garde dans `cap->offset`.
+4. **Attendre avec un timeout** : `pcap_dispatch` appelle un callback pour chaque
+   paquet. On boucle jusqu'à avoir un résultat ou jusqu'à la fin du délai
+   (`clock_gettime(CLOCK_MONOTONIC)`). Aucune réponse = **Filtered**.
+   **Il faut ouvrir la capture AVANT d'envoyer le SYN**, sinon sur une cible
+   locale la réponse peut arriver avant que la capture existe.
+5. **Parser** : `[liaison][IP : ihl*4 octets][TCP ou ICMP]`.
+   - La longueur IP se lit dans `ihl * 4`, on ne suppose pas 20.
+   - TCP : on vérifie `source == port scanné` et `dest == notre port source`
+     (sinon on prend le trafic d'un autre programme pour notre réponse).
+     `RST` = Closed, `SYN+ACK` = Open.
+   - ICMP type 3 (destination unreachable) : le message contient l'IP d'origine
+     et les 8 premiers octets de notre TCP. On revérifie la cible et les ports
+     dans cette copie, puis on conclut Filtered.
+   - Chaque lecture est précédée d'un test de `caplen` : un paquet tronqué ne
+     doit jamais faire lire hors du buffer.
+
+### Détail piégeux : on voit nos propres paquets
+
+Sur `lo` avec `any`, notre SYN sort et est recapturé : son IP source est
+`127.0.0.1`, donc il passe le filtre `src host 127.0.0.1`. C'est le contrôle des
+ports dans `parse_tcp` qui l'écarte (son port destination est 4242, pas 40000).
+Sans ce contrôle on lirait notre propre SYN comme une réponse.
+
+### Organisation du code
+
+- `open_capture(cap, dst)` : ouvre, filtre, calcule l'offset.
+- `wait_response(cap, probe, timeout_ms)` : renvoie `STATE_OPEN`, `STATE_CLOSED`
+  ou `STATE_FILTERED`.
+- `close_capture(cap)` : `pcap_close` (le `pcap_freecode` est déjà fait à l'ouverture).
+- `main` : ouvrir la capture, envoyer le SYN, attendre, afficher, fermer.
+
+### Comment vérifier
+
+```
+nc -lk 4242 &
+sudo ./ft_nmap --ip 127.0.0.1 --ports 4242     # attendu : Port 4242 : Open
+sudo ./ft_nmap --ip 127.0.0.1 --ports 4243     # attendu : Port 4243 : Closed
+sudo tcpdump -i any -nn port 4242              # en parallèle, pour comparer
+```
+
+### Questions de soutenance probables
+
+- « Pourquoi pcap plutôt qu'un raw socket pour recevoir ? » → voir plus haut.
+- « Pourquoi ouvrir la capture avant d'envoyer ? » → pour ne pas rater une réponse rapide.
+- « À quoi sert `pcap_datalink` ? » → connaître la taille de l'en-tête de liaison, donc où commence l'IP.
+- « Pourquoi vérifier les ports de la réponse ? » → ne pas confondre avec le trafic d'autres programmes ni avec notre propre SYN.
+
+### Prochaine étape (phase 3)
+
+Généraliser en `send_probe(target, port, scan_type)` pour les 6 scans, un port
+source différent par type de scan, et retransmission des sondes sans réponse.
